@@ -6,6 +6,12 @@ use Yii;
 
 class Sequence extends \yii\db\ActiveRecord {
 
+    const DEFAULT_RESULT = 5;
+    const DEFAULT_PMAX = 1;
+
+    public $pTytes = [1, 3];
+    public $categories = [1, 2, 3, 4];
+
     public static function tableName()
     {
         return 'sequence';
@@ -18,8 +24,9 @@ class Sequence extends \yii\db\ActiveRecord {
     {
         return [
             [['object_id', 'p_max', 'p_type'], 'required'],
-            [['object_id', 'p_type'], 'integer'],
-            [['p_max', 'result'], 'number'],
+            [['object_id', 'p_type', 'category'], 'integer'],
+            [['p_max', 'result', 'p_result'], 'number'],
+            [['comment'], 'string', 'max' => 1000],
             [['created_at'], 'safe'],
         ];
     }
@@ -34,10 +41,46 @@ class Sequence extends \yii\db\ActiveRecord {
             ],
         ];
     }
+
+    public function beforeSave($insert) {
+        if($this->p_max < 1.6) {
+            $this->category = 1;
+        } elseif($this->p_max < 1.8) {
+            $this->category = 2;
+        } elseif($this->p_max < 2.0) {
+            $this->category = 3;
+        } else {
+            $this->category = 4;
+        }
+
+        return parent::beforeSave($insert);
+    }
     
     public function getDatas()
     {
         return $this->hasMany(SequenceData::className(), ['sequence_id' => 'id']);
+    }
+
+    public function generateDefault($object_id, $comment='') {
+        foreach ($this->pTytes as $pType) {
+            $sequence = new self;
+            $sequence->object_id = $object_id;
+            $sequence->comment = $comment;
+            $sequence->result = self::DEFAULT_RESULT;
+            $sequence->p_type = $pType;
+            $sequence->p_max = self::DEFAULT_PMAX;
+            $sequence->save();
+
+            $object = Object::findOne($object_id);
+            $object->updateSequenceParams($sequence->p_max, $pType);
+        }
+    }
+
+    public function getNewPResult($object, $pType) {
+        $attrCount = 'p'.$pType.'_sequence_count';
+        $attrTotalMark = 'p'.$pType.'_sequence_count';
+
+        return $object->$attrTotalMark / $object->$attrCount;
     }
 
     /*public function create($obj, $data) {

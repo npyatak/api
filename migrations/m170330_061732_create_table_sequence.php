@@ -16,7 +16,10 @@ class m170330_061732_create_table_sequence extends Migration {
             'object_id' => $this->integer()->notNull(),
             'p_max' => $this->decimal(10, 8)->notNull(),
             'p_type' => $this->integer(1)->notNull(),
+            'category' => $this->integer(1)->notNull(),
             'result' => $this->float(),
+            'p_result' => $this->float(),
+            'comment' => $this->string(1000),
 
             'created_at' => $this->integer()->notNull(),
 

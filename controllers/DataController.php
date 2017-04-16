@@ -23,6 +23,7 @@ class DataController extends ActiveController {
         $behaviors['verbs'] = [
                 'class' => \yii\filters\VerbFilter::className(),
                 'actions' => [
+                    'add' => ['post'],
                     'location'  => ['post'],
                     'sequence'  => ['post'],
                     'p2alg1'  => ['get', 'head'],
@@ -30,10 +31,26 @@ class DataController extends ActiveController {
                     'alg1result'  => ['get', 'head'],
                     'aggregate'  => ['get', 'head'],
                     'erase'  => ['get', 'head'],
+                    'reset'  => ['get', 'head'],
+                    'lastdata'  => ['get', 'head'],
                 ],
         ];
       
         return $behaviors;
+    }
+
+    public function actionAdd() {
+        $inputData = json_decode(Yii::$app->request->getRawBody(), true);
+
+        $object = new Object;
+        $object->name = $inputData['name'];
+        
+        if($object->save()) {
+            Sequence::generateDefault($object->id);
+            
+            Yii::$app->getResponse()->setStatusCode(204);
+            return 'success';
+        }
     }
 
     public function actionLocation() {
@@ -76,15 +93,14 @@ class DataController extends ActiveController {
 
             $sequence = new Sequence;
             $sequence->object_id = $object->id;
-            $sequence->p_type = $inputData['Ptype'];
+            $sequence->p_type = (int)$inputData['Ptype'];
             $sequence->p_max = $inputData['Pmax'];
 
             if($sequence->validate()) {
-                $object->sequence_count = $object->sequence_count + 1;
-                $object->sequence_total_mark = $object->getSequenceTotalMark($inputData['Pmax']);
-                $object->save();
+                $object->updateSequenceParams($inputData['Pmax'], $sequence->p_type);
 
-                $sequence->result = $object->sequence_total_mark / $object->sequence_count;
+                $sequence->p_result = $sequence->getNewPResult($object, $sequence->p_type);
+                $sequence->result = $object->result;
                 $sequence->save();
 
                 foreach ($inputData['data'] as $data) {
@@ -152,32 +168,58 @@ class DataController extends ActiveController {
         return $result;
     }
 
-     public function actionAggregate($object_id, $dateFrom, $dateTo) {
+     public function actionAggregate($object_id, $Ptype=null, $dateFrom=null, $dateTo=null) {
         $object = Object::findOne($object_id);
-        $lastSequence = Sequence::find()->where(['object_id'=>$object_id])->orderBy('created_at DESC')->one();
+
+        $query = Sequence::find()->where(['object_id'=>$object_id])
+            ->orderBy('created_at DESC');
+        if($Ptype) $query->andWhere(['p_type'=>$Ptype]);
+        $lastSequence = $query->one();
 
         if($object === null || $lastSequence === null) {
             throw new ServerErrorHttpException('No object found with ID: '.$object_id);
         }
 
+        if(!$dateFrom) {
+            $dateFrom = Helper::dateFormatWithMS($lastSequence->created_at);
+        }
+        if(!$dateTo) {
+            $dateTo = date("Y-m-d H:i:s");
+        }
+        
+
+
         $result = [
             'objID'=>$lastSequence->object_id, 
             'dateFrom'=>$dateFrom,
             'dateTo'=>$dateTo,
-            'sequence_total_mark'=>$object->sequence_total_mark,
-            'sequence_count'=>$object->sequence_count,
+            //'sequence_total_mark'=>$object->sequence_total_mark,
+            //'sequence_count'=>$object->sequence_count,
             'result'=>$lastSequence->result,
+            'p_result'=>$lastSequence->result,
             'Ptype'=>$lastSequence->p_type,
             'Pmax'=>$lastSequence->p_max
         ];
+    
+        $lastLocation = Location::find()->where(['object_id'=>$object->id])->asArray()->orderBy('created_at DESC')->one();
+        if($lastLocation) {
+            $data['lastLocation'] = [
+                'dateTime'=>Helper::dateFormatWithMS($lastLocation['date_time']), 
+                'p0'=>$lastLocation['p0'],
+                'lat'=>$lastLocation['lat'],
+                'lon'=>$lastLocation['lon']
+            ];
+        } 
 
-        $sequences = Sequence::find()
-            ->select(['sequence.id as sequence_id', 'object_id', 'p0', 'lat', 'lon', 'date_time', 'result', 'p_max', 'p_type', 'sequence_id'])
+        $query = Sequence::find()
+            ->select(['sequence.id as sequence_id', 'object_id', 'category', 'p0', 'lat', 'lon', 'date_time', 'result', 'p_max', 'p_type', 'sequence_id'])
             ->join('RIGHT JOIN', 'sequence_data as data', 'data.sequence_id=sequence.id')
             ->where(['object_id'=>$object_id])
             ->andWhere(['between', 'date_time', Helper::timestampWithMS($dateFrom), Helper::timestampWithMS($dateTo)])
-            ->asArray()
-            ->all();
+            ->asArray();
+        if($Ptype) $query->andWhere(['p_type'=>$Ptype]);
+
+        $sequences = $query->all();
 
         $seqArr = [];
         foreach ($sequences as $sequence) {
@@ -186,6 +228,7 @@ class DataController extends ActiveController {
                     'result'=>$sequence['result'],
                     'Pmax'=>$sequence['p_max'],
                     'Ptype'=>$sequence['p_type'],
+                    'category'=>$sequence['category'],
                     'data'=>[]
                 ];
             }
@@ -199,7 +242,7 @@ class DataController extends ActiveController {
         }
 
         foreach ($seqArr as $key => $arr) {
-            $result['sequence'][] = $arr;
+            $result['cat'.$arr['category']]['sequence'][] = $arr;
         }
 
         $locations = Location::find()->where(['object_id'=>$object_id])->andWhere(['between', 'date_time', Helper::timestampWithMS($dateFrom), Helper::timestampWithMS($dateTo)])->asArray()->all();
@@ -230,14 +273,65 @@ class DataController extends ActiveController {
         $object->sequence_count = 1;
         $object->save();
 
-        $sequence = new Sequence;
-        $sequence->result = 5;
-        $sequence->object_id = $object_id;
-        $sequence->p_type = 2;
-        $sequence->p_max = 1;
-        $sequence->save();
+        Sequence::generateDefault($object_id);
 
         Yii::$app->getResponse()->setStatusCode(204);
         return 'success';
+    }
+
+    public function actionReset($object_id, $comment='') {
+        $object = Object::findOne($object_id);
+
+        if($object === null) {
+            throw new ServerErrorHttpException('No object found with ID: '.$object_id);
+        }
+
+        Sequence::generateDefault($object_id, $comment);
+
+        Yii::$app->getResponse()->setStatusCode(204);
+        return 'success';
+    }
+
+    public function actionLastdata($object_id=null) {
+        $data = [];
+        if($object_id) {
+            $object = Object::findOne($object_id);
+
+            if($object === null) {
+                throw new ServerErrorHttpException('No object found with ID: '.$object_id);
+            }
+            $data = $this->prepareLastData($object);
+        } else {
+            $objects = Object::find()->all();
+            foreach ($objects as $object) {
+                $data[] = $this->prepareLastData($object);
+            }
+        }
+
+        Yii::$app->response->format = \yii\web\Response::FORMAT_JSON;
+        return $data;
+    }
+
+    private function prepareLastData($object) {
+        $data = ['objId'=>$object->id, 'name'=>$object->name, 'result'=>$object->result];
+        $sequence = new Sequence;
+        foreach ($sequence->pTytes as $pType) {
+            $lastSequence = Sequence::find()->where(['object_id'=>$object->id])->andWhere(['p_type'=>$pType])->orderBy('created_at DESC')->one();
+            $data['p'.$pType.'Result'] = $lastSequence->result;
+        }
+
+        $lastLocation = Location::find()->where(['object_id'=>$object->id])->asArray()->orderBy('created_at DESC')->one();
+        if($lastLocation) {
+            $data['lastLocation'] = [
+                'dateTime'=>Helper::dateFormatWithMS($lastLocation['date_time']), 
+                'p0'=>$lastLocation['p0'],
+                'lat'=>$lastLocation['lat'],
+                'lon'=>$lastLocation['lon']
+            ];
+        } else {
+            $data['lastLocation'] = [];
+        }
+
+        return $data;
     }
 }

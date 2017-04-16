@@ -13,11 +13,11 @@ class m170308_083610_create_table_object extends Migration {
 
         $this->createTable('{{%object}}', [
             'id' => $this->primaryKey(),
-            //'obj_id' => $this->integer()->notNull(),
-            'sequence_total_mark' => $this->float(),
-            'sequence_count' => $this->integer()->defaultValue(0)->notNull(),
-
-            //"CONSTRAINT object_unique_obj_id UNIQUE (obj_id)",
+            'name' => $this->string(100),
+            'p1_sequence_total_mark' => $this->float(),
+            'p1_sequence_count' => $this->integer()->defaultValue(0)->notNull(),
+            'p3_sequence_total_mark' => $this->float(),
+            'p3_sequence_count' => $this->integer()->defaultValue(0)->notNull(),
 
         ], $tableOptions);
 
