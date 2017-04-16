@@ -315,7 +315,7 @@ class DataController extends ActiveController {
     private function prepareLastData($object) {
         $data = ['objId'=>$object->id, 'name'=>$object->name, 'result'=>$object->result];
 
-        foreach (Sequence::PTYPES_ARRAY as $pType) {
+        foreach ([1, 3] as $pType) {
             $lastSequence = Sequence::find()->where(['object_id'=>$object->id])->andWhere(['p_type'=>$pType])->orderBy('created_at DESC')->one();
             $data['p'.$pType.'Result'] = $lastSequence->result;
         }

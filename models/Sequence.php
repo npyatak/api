@@ -9,8 +9,6 @@ class Sequence extends \yii\db\ActiveRecord {
     const DEFAULT_RESULT = 5;
     const DEFAULT_PMAX = 1;
 
-    const PTYPES_ARRAY = [1, 3];
-
     public $categories = [1, 2, 3, 4];
 
     public static function tableName()
@@ -63,7 +61,7 @@ class Sequence extends \yii\db\ActiveRecord {
     }
 
     public function generateDefault($object_id, $comment='') {
-        foreach (self::PTYPES_ARRAY as $pType) {
+        foreach ([1, 3] as $pType) {
             $sequence = new self;
             $sequence->object_id = $object_id;
             $sequence->comment = $comment;
