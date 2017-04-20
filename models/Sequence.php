@@ -77,7 +77,7 @@ class Sequence extends \yii\db\ActiveRecord {
 
     public function getNewPResult($object, $pType) {
         $attrCount = 'p'.$pType.'_sequence_count';
-        $attrTotalMark = 'p'.$pType.'_sequence_count';
+        $attrTotalMark = 'p'.$pType.'_sequence_total_mark';
 
         return $object->$attrTotalMark / $object->$attrCount;
     }
