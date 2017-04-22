@@ -181,7 +181,13 @@ class DataController extends ActiveController {
         }
 
         if(!$dateFrom) {
-            $dateFrom = Helper::dateFormatWithMS($lastSequence->created_at);
+            $query = Sequence::find()->where(['object_id'=>$object_id])
+                ->andWhere(['result'=>Sequence::DEFAULT_RESULT, 'p_max'=>Sequence::DEFAULT_PMAX])
+                ->orderBy('created_at DESC');
+            if($Ptype) $query->andWhere(['p_type'=>$Ptype]);
+            $lastDefaultSequence = $query->one();
+            print_r($lastDefaultSequence);
+            $dateFrom = Helper::dateFormatWithMS($lastDefaultSequence->created_at);
         }
         if(!$dateTo) {
             $dateTo = date("Y-m-d H:i:s");
